@@ -40,6 +40,7 @@ from .utils import (
     get_firmware_version_int,
     get_compatible_sensors,
     normalize_name_prefix,
+    slugify_name_prefix_for_lookup,
     detect_sensor_change,
     get_stored_sensor_id,
     store_sensor_id,
@@ -1279,7 +1280,7 @@ class LambdaDataUpdateCoordinator(DataUpdateCoordinator):
         try:
             data = event.data
             entity_id = data.get("entity_id")
-            _name_prefix = normalize_name_prefix(self.entry.data.get("name", ""))
+            _name_prefix = slugify_name_prefix_for_lookup(self.entry.data.get("name", ""))
             if entity_id and _name_prefix and entity_id.startswith(
                 f"sensor.{_name_prefix}_"
             ):
@@ -2033,7 +2034,7 @@ class LambdaDataUpdateCoordinator(DataUpdateCoordinator):
             sensor_entity_id = sensor_config.get("sensor_entity_id")
         if not sensor_entity_id:
             # Entity-IDs der Sensoren werden in sensor.py mit kleingeschriebenem name_prefix erzeugt
-            name_prefix = normalize_name_prefix(self.entry.data.get("name", "")) or "eu08l"
+            name_prefix = slugify_name_prefix_for_lookup(self.entry.data.get("name", "")) or "eu08l"
             sensor_entity_id = default_sensor_id_template.format(name_prefix=name_prefix, hp_idx=hp_idx)
             _LOGGER.debug(
                 "[Energy] HP%s %s: Verwende Modbus-Sensor %s",

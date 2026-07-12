@@ -15,6 +15,7 @@ from homeassistant.helpers.entity_registry import async_get as async_get_entity_
 from homeassistant.const import STATE_UNKNOWN
 from homeassistant.helpers.entity_component import async_update_entity
 from homeassistant.helpers.translation import async_get_translations
+from homeassistant.util import slugify as ha_slugify
 
 from .const import (
     BASE_ADDRESSES,
@@ -684,6 +685,20 @@ def normalize_name_prefix(raw: str) -> str:
     if not raw or not isinstance(raw, str):
         return ""
     return raw.lower().replace(" ", "")
+
+
+def slugify_name_prefix_for_lookup(raw: str) -> str:
+    """ASCII-sicherer name_prefix für reine Status-Lookups (z.B. hass.states.get()).
+
+    Transliteriert Umlaute exakt so, wie Home Assistants Entity Registry beim
+    Anlegen einer Entity intern bereits slugify() anwendet. NUR für read-only
+    Lookups bestehender Entities verwenden — NICHT für unique_id/entity_id-Erzeugung
+    oder persistierte Vergleichswerte (das würde bestehende unique_ids ändern).
+    Für reine ASCII-Namen identisch zu normalize_name_prefix().
+    """
+    if not raw or not isinstance(raw, str):
+        return ""
+    return ha_slugify(raw, separator="")
 
 
 def generate_sensor_names(
