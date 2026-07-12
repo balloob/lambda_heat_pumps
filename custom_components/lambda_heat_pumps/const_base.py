@@ -60,18 +60,23 @@ DEBUG = False
 DEBUG_PREFIX = "lambda_wp"
 LOG_LEVELS = {"error": "ERROR", "warning": "WARNING", "info": "INFO", "debug": "DEBUG"}
 
-# Firmware Versions
-FIRMWARE_VERSION = {
-    "V1.1.0-3K": 8,  # Latest firmware
-    "V0.0.10-3K": 8,
-    "V0.0.9-3K": 7,
-    "V0.0.8-3K": 6,  # Previous firmware - most common in the field
-    "V0.0.7-3K": 5,
-    "V0.0.6-3K": 4,
-    "V0.0.5-3K": 3,
-    "V0.0.4-3K": 2,
-    "V0.0.3-3K": 1,
+# Firmware Versions — primary config, carries version int and register-order default per FW version.
+# "reg_order" is the default for int32_register_order when no explicit YAML override is set.
+# YAML override (lambda_wp_config.yaml modbus.int32_register_order) always takes precedence.
+FIRMWARE_CONFIG: dict = {
+    "V1.1.0-3K":  {"version": 9, "reg_order": "high_first"},
+    "V0.0.10-3K": {"version": 8, "reg_order": "high_first"},
+    "V0.0.9-3K":  {"version": 7, "reg_order": "high_first"},
+    "V0.0.8-3K":  {"version": 6, "reg_order": "high_first"},  # most common in the field
+    "V0.0.7-3K":  {"version": 5, "reg_order": "high_first"},
+    "V0.0.6-3K":  {"version": 4, "reg_order": "high_first"},
+    "V0.0.5-3K":  {"version": 3, "reg_order": "high_first"},
+    "V0.0.4-3K":  {"version": 2, "reg_order": "high_first"},
+    "V0.0.3-3K":  {"version": 1, "reg_order": "high_first"},
 }
+
+# Backward-compatibility alias — all existing callers of FIRMWARE_VERSION remain unchanged.
+FIRMWARE_VERSION: dict = {k: v["version"] for k, v in FIRMWARE_CONFIG.items()}
 
 # State Mappings
 # are outsourced to const_mapping.py
