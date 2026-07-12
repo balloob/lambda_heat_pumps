@@ -275,5 +275,11 @@
     "buff": { "name": "Buffer" },
     "sol": { "name": "Solar" },
     "main": { "name": "Lambda Heat Pump" }
+  },
+  "issues": {
+    "register_order_changed": {
+      "title": "Register order changed — check energy values",
+      "description": "The int32_register_order was changed from **{old_order}** to **{new_order}**. Previously accumulated energy values may be incorrect. Please check the documentation and correct values if needed (e.g. set `maintenance.reset_energy_statistics: true` in lambda_wp_config.yaml)."
+    }
   }
 }

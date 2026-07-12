@@ -275,5 +275,11 @@
     "buff": { "name": "Puffer" },
     "sol": { "name": "Solar" },
     "main": { "name": "Lambda Wärmepumpe" }
+  },
+  "issues": {
+    "register_order_changed": {
+      "title": "Register-Reihenfolge geändert — Energiewerte prüfen",
+      "description": "Die int32_register_order wurde von **{old_order}** auf **{new_order}** geändert. Bereits akkumulierte Energiewerte könnten falsch sein. Bitte prüfe die Dokumentation und korrigiere die Werte bei Bedarf (z. B. `maintenance.reset_energy_statistics: true` in lambda_wp_config.yaml)."
+    }
   }
 }

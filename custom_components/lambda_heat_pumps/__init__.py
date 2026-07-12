@@ -152,6 +152,18 @@ async def async_setup_entry(
     # Ensure lambda_wp_config.yaml exists (create from template if missing)
     await ensure_lambda_config(hass)
 
+    # --- Maintenance: reset_energy_statistics ---
+    from .utils import load_lambda_config, clear_reset_energy_flag
+    from .coordinator import _reset_energy_persist_data
+    import os as _os
+    _init_config = await load_lambda_config(hass)
+    if _init_config.get("maintenance", {}).get("reset_energy_statistics", False):
+        _persist_path = _os.path.join(
+            hass.config.config_dir, "lambda_heat_pumps", "cycle_energy_persist.json"
+        )
+        await hass.async_add_executor_job(_reset_energy_persist_data, _persist_path)
+        await clear_reset_energy_flag(hass)
+
     # --- Intelligente Auto-Detection mit Performance-Optimierungen ---
     # Erstelle einen Coordinator für beide Zwecke (Auto-Detection + Produktivbetrieb)
     coordinator = LambdaDataUpdateCoordinator(hass, entry)
@@ -290,6 +302,33 @@ async def async_setup_entry(
         from .modbus_utils import get_int32_register_order
         coordinator._int32_register_order = await get_int32_register_order(hass, entry)
         _LOGGER.info("Register-Order konfiguriert: %s", coordinator._int32_register_order)
+
+        # --- Repair-Detection: Register-Order-Änderung ---
+        _persisted_order = getattr(coordinator, "_persisted_register_order", None)
+        _current_order = coordinator._int32_register_order
+        if _persisted_order is not None and _persisted_order != _current_order:
+            _LOGGER.warning(
+                "int32_register_order hat sich geändert: %s → %s. "
+                "Energiewerte könnten falsch sein. Siehe Dokumentation zur Korrektur.",
+                _persisted_order, _current_order,
+            )
+            try:
+                from homeassistant.helpers.issue_registry import IssueSeverity, async_create_issue
+                async_create_issue(
+                    hass,
+                    DOMAIN,
+                    "register_order_changed",
+                    is_fixable=False,
+                    severity=IssueSeverity.WARNING,
+                    translation_key="register_order_changed",
+                    translation_placeholders={
+                        "old_order": _persisted_order,
+                        "new_order": _current_order,
+                    },
+                    learn_more_url="https://guidojeuken-6512.github.io/lambda_heat_pumps/FAQ/register-order-korrektur/",
+                )
+            except Exception as _repair_ex:
+                _LOGGER.warning("Konnte Repair-Issue nicht erstellen: %s", _repair_ex)
 
         # Setze die generierten Base Addresses
         coordinator.base_addresses = base_addresses

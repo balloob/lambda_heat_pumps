@@ -155,6 +155,7 @@ async def test_first_start_blocking_detect_waits_for_stable_connection():
 
     with (
         patch("custom_components.lambda_heat_pumps.ensure_lambda_config", new=AsyncMock()),
+        patch("custom_components.lambda_heat_pumps.utils.load_lambda_config", new=AsyncMock(return_value={"maintenance": {}})),
         patch("custom_components.lambda_heat_pumps.LambdaDataUpdateCoordinator", return_value=mock_coordinator),
         patch("custom_components.lambda_heat_pumps.wait_for_stable_connection", mock_wait),
         patch("custom_components.lambda_heat_pumps.auto_detect_modules", new=AsyncMock(
@@ -434,6 +435,7 @@ async def test_skip_auto_detect_does_not_schedule_background_task():
 
     with (
         patch("custom_components.lambda_heat_pumps.ensure_lambda_config", new=AsyncMock()),
+        patch("custom_components.lambda_heat_pumps.utils.load_lambda_config", new=AsyncMock(return_value={"maintenance": {}})),
         patch("custom_components.lambda_heat_pumps.LambdaDataUpdateCoordinator", return_value=mock_coordinator),
         patch("custom_components.lambda_heat_pumps.async_remove_duplicate_entity_suffixes", new=AsyncMock()),
         patch("custom_components.lambda_heat_pumps.modbus_utils.get_int32_register_order", new=AsyncMock(return_value="high_first")),

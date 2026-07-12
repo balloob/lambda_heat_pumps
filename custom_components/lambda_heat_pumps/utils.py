@@ -368,6 +368,7 @@ async def load_lambda_config(hass: HomeAssistant) -> dict:
         "energy_consumption_sensors": {},
         "energy_consumption_offsets": {},
         "modbus": {},
+        "maintenance": {},
     }
 
     if not os.path.exists(lambda_config_path):
@@ -500,6 +501,7 @@ async def load_lambda_config(hass: HomeAssistant) -> dict:
             "energy_consumption_sensors": config.get("energy_consumption_sensors", {}),
             "energy_consumption_offsets": energy_consumption_offsets,
             "modbus": config.get("modbus", {}),  # Include modbus configuration
+            "maintenance": config.get("maintenance", {}),
         }
         
         # Cache the config in hass.data to avoid repeated loading
@@ -2231,6 +2233,42 @@ def store_thermal_sensor_id(persist_data: dict, hp_idx: int, sensor_id: str) -> 
     old_id = persist_data["thermal_sensor_ids"].get(hp_key)
     persist_data["thermal_sensor_ids"][hp_key] = normalized_sensor_id
     _LOGGER.debug("SENSOR-CHANGE-DETECTION: Thermik-Sensor-ID für %s gespeichert: %s -> %s", hp_key, old_id, normalized_sensor_id)
+
+
+async def clear_reset_energy_flag(hass: HomeAssistant) -> None:
+    """Setzt maintenance.reset_energy_statistics in lambda_wp_config.yaml auf false zurück.
+
+    Wird nach erfolgreichem Reset aufgerufen, damit der Flag nicht beim nächsten
+    Neustart erneut ausgeführt wird. Invalidiert auch den Config-Cache und löscht
+    ein eventuell vorhandenes Repair-Issue.
+    """
+    config_path = os.path.join(hass.config.config_dir, "lambda_wp_config.yaml")
+
+    def _write_flag() -> bool:
+        try:
+            if os.path.exists(config_path):
+                with open(config_path, "r", encoding="utf-8") as f:
+                    raw = yaml.safe_load(f) or {}
+            else:
+                raw = {}
+            raw.setdefault("maintenance", {})["reset_energy_statistics"] = False
+            with open(config_path, "w", encoding="utf-8") as f:
+                yaml.dump(raw, f, allow_unicode=True, default_flow_style=False)
+            return True
+        except Exception as e:
+            _LOGGER.warning("Konnte reset_energy_statistics-Flag nicht zurücksetzen: %s", e)
+            return False
+
+    success = await hass.async_add_executor_job(_write_flag)
+    if success:
+        _LOGGER.info("reset_energy_statistics flag in lambda_wp_config.yaml auf false gesetzt.")
+    hass.data.pop("_lambda_config_cache", None)
+    try:
+        from homeassistant.helpers.issue_registry import async_delete_issue
+        from .const import DOMAIN
+        async_delete_issue(hass, DOMAIN, "register_order_changed")
+    except Exception:
+        pass
 
 
 async def async_cleanup_all_components(hass: HomeAssistant, entry_id: str) -> None:

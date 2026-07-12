@@ -286,5 +286,16 @@ LAMBDA_WP_CONFIG_TEMPLATE = """# Lambda WP configuration
 # Example:
 #modbus:
 #  int32_register_order: "high_first"  # or "low_first"
+
+# Maintenance / Wartung
+# reset_energy_statistics: Setzt alle akkumulierten Energiezähler auf 0 zurück.
+# Sinnvoll nach Korrektur des int32_register_order oder nach Gerätetausch.
+# Das Flag wird nach dem Reset automatisch wieder auf false gesetzt.
+# Tipp für FW-Update-Korrektur: Erst energy_consumption_offsets mit den korrekten
+# Werten aus der Lambda-Software befüllen, dann reset_energy_statistics: true setzen
+# und HA neu starten. Total-Sensoren starten bei den richtigen Werten,
+# Daily/Monthly/Yearly akkumulieren ab Reset frisch bei 0.
+#maintenance:
+#  reset_energy_statistics: false
 """
 

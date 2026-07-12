@@ -56,6 +56,43 @@ SCAN_INTERVAL = timedelta(seconds=30)
 # Sensor-Wechsel-Erkennung läuft bei jedem Start, um alle Sensor-Wechsel zu erkennen
 
 
+def _reset_energy_persist_data(persist_file_path: str) -> None:
+    """Setzt alle Energie-Akkumulatoren in der Persist-Datei auf 0 zurück.
+
+    Wird aufgerufen wenn maintenance.reset_energy_statistics: true in lambda_wp_config.yaml gesetzt ist.
+    Nicht berührt: heating_cycles, last_operating_states, sensor_ids, thermal_sensor_ids.
+    """
+    try:
+        with open(persist_file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        _LOGGER.info("Persist file not found, nothing to reset: %s", persist_file_path)
+        return
+    except json.JSONDecodeError as e:
+        _LOGGER.warning("Persist file corrupt, cannot reset: %s", e)
+        return
+
+    for entity_state in data.get("energy_sensor_states", {}).values():
+        entity_state["state"] = 0
+        attrs = entity_state.get("attributes", {})
+        for key in ("energy_value", "yesterday_value",
+                    "previous_monthly_value", "previous_yearly_value", "applied_offset"):
+            attrs[key] = 0
+
+    for key in ("last_energy_readings", "last_thermal_energy_readings"):
+        data[key] = {hp: None for hp in data.get(key, {})}
+
+    data["energy_offsets"] = {}
+
+    with open(persist_file_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+
+    _LOGGER.warning(
+        "Energy statistics reset: Alle Energiezähler wurden auf 0 zurückgesetzt "
+        "(reset_energy_statistics war in lambda_wp_config.yaml gesetzt)."
+    )
+
+
 class LambdaDataUpdateCoordinator(DataUpdateCoordinator):
     """Class to manage fetching Lambda data."""
 
@@ -245,7 +282,7 @@ class LambdaDataUpdateCoordinator(DataUpdateCoordinator):
 
         def _load_and_normalize():
             try:
-                with open(self._persist_file) as f:
+                with open(self._persist_file, encoding="utf-8-sig") as f:
                     content = f.read().strip()
 
                 if not content:
@@ -347,6 +384,7 @@ class LambdaDataUpdateCoordinator(DataUpdateCoordinator):
             "sensor_ids": sensor_ids_to_save,
             "thermal_sensor_ids": thermal_sensor_ids_to_save,
             "energy_sensor_states": energy_sensor_states_to_save,
+            "int32_register_order": self._int32_register_order,
         }
 
         def _write_data():
@@ -468,6 +506,7 @@ class LambdaDataUpdateCoordinator(DataUpdateCoordinator):
         self._sensor_ids = data.get("sensor_ids", {})
         self._thermal_sensor_ids = data.get("thermal_sensor_ids", {})
         self._energy_sensor_states = data.get("energy_sensor_states", {})
+        self._persisted_register_order = data.get("int32_register_order", None)
         # Energy Offsets werden bereits aus der Config geladen
 
         # last_energy_reading: Bei Sensor-Wechsel sofort auf None setzen (bevor es verwendet wird),
