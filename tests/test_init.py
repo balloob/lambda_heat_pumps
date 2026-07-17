@@ -272,3 +272,36 @@ async def test_a_refused_refrigerant_block_does_not_break_the_heat_pump(
     assert not registry.async_get_entity_id(
         "sensor", DOMAIN, "eu08l_hp1_hot_gas_temperature"
     )
+
+
+async def test_capacity_limit_sensors_when_the_firmware_answers(
+    hass: HomeAssistant, controller: Controller
+) -> None:
+    """A heat pump whose firmware serves the capacity block gets its sensors."""
+    controller.registers[1051] = 90  # dhw output power at 15C -> 9.0 kW
+    await setup_entry(hass, controller, legacy=True)
+
+    assert state_of(hass, "eu08l_hp1_dhw_output_power_15c") == "9.0"
+
+
+async def test_a_refused_capacity_block_does_not_break_the_heat_pump(
+    hass: HomeAssistant, controller: Controller
+) -> None:
+    """A firmware that refuses a capacity register still sets up cleanly.
+
+    The whole block is read on its own, so one refused register drops the
+    capacity sensors without touching the heat pump's other values.
+    """
+    controller.refuse(1051)  # dhw_output_power_15c, before setup
+    entry = await setup_entry(hass, controller, legacy=True)
+
+    assert entry.state is ConfigEntryState.LOADED
+    assert state_of(hass, "eu08l_hp1_flow_line_temperature") == "34.12"
+    registry = er.async_get(hass)
+    assert not registry.async_get_entity_id(
+        "sensor", DOMAIN, "eu08l_hp1_dhw_output_power_15c"
+    )
+    # The refrigerant block is independent, so it is unaffected.
+    assert registry.async_get_entity_id(
+        "sensor", DOMAIN, "eu08l_hp1_hot_gas_temperature"
+    )

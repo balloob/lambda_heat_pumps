@@ -24,20 +24,54 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from dataclasses import dataclass, field
+
 from modbus_connection import BlockReadError
-from modbus_connection.model import Component, ComponentGroup
+from modbus_connection.model import Component, ComponentGroup, Range
 
 from .boiler import Boiler
 from .buffer import Buffer
 from .general import Ambient, EManager
-from .heat_pump import HeatPump, HeatPumpLowFirst, HeatPumpRefrigerant
+from .heat_pump import (
+    HeatPump,
+    HeatPumpCapacityLimits,
+    HeatPumpLowFirst,
+    HeatPumpRefrigerant,
+)
 from .heating_circuit import HeatingCircuit
 from .model import LambdaComponent
-from .ranges import REFRIGERANT_RANGE, base_address, readable_ranges
+from .ranges import (
+    CAPACITY_LIMIT_RANGES,
+    REFRIGERANT_RANGES,
+    base_address,
+    readable_ranges,
+)
 from .solar import Solar, SolarLowFirst
 
 if TYPE_CHECKING:
     from modbus_connection import ModbusUnit, WordOrder
+
+
+@dataclass
+class OptionalBlock:
+    """A firmware-dependent heat pump block, one component per heat pump.
+
+    `available` is the set of heat pumps (1-based) whose controller answered for
+    the block on the last poll; the rest refuse it and get no entities for it.
+    """
+
+    components: list[LambdaComponent]
+    available: set[int] = field(default_factory=set)
+
+    async def async_update(self) -> None:
+        """Read each heat pump's block, dropping the ones that refuse it."""
+        for index, component in enumerate(self.components, 1):
+            try:
+                await component.async_update()
+            except BlockReadError:
+                self.available.discard(index)
+            else:
+                self.available.add(index)
 
 __all__ = [
     "Ambient",
@@ -101,17 +135,33 @@ class LambdaHeatPump:
 
         self._group = ComponentGroup(unit, self.components)
 
-        # The refrigerant-circuit block is undocumented and some firmwares refuse
-        # it, so each heat pump's is read on its own, apart from the group. The
-        # set records which heat pumps (1-based) answered on the last poll.
-        self.heat_pump_refrigerants = self._build(
-            HeatPumpRefrigerant, unit, "hp", num_hps
+        # Some heat pump blocks are firmware-dependent — a controller either
+        # serves them or refuses them outright — so each is read on its own,
+        # apart from the group, and a refusal only drops that block. Each
+        # `OptionalBlock` holds one component per heat pump and the set of heat
+        # pumps (1-based) that answered for it on the last poll.
+        self.refrigerant = self._optional_block(
+            HeatPumpRefrigerant, REFRIGERANT_RANGES, num_hps
         )
-        for index, refrigerant in enumerate(self.heat_pump_refrigerants, 1):
+        self.capacity_limits = self._optional_block(
+            HeatPumpCapacityLimits, CAPACITY_LIMIT_RANGES, num_hps
+        )
+        self.optional_blocks = (self.refrigerant, self.capacity_limits)
+
+    def _optional_block(
+        self,
+        component_class: type[LambdaComponent],
+        ranges: tuple[Range, ...],
+        num_hps: int,
+    ) -> OptionalBlock:
+        """Build one firmware-dependent component per heat pump."""
+        components = self._build(component_class, self._unit, "hp", num_hps)
+        for index, component in enumerate(components, 1):
             base = base_address("hp", index)
-            low, high = REFRIGERANT_RANGE
-            refrigerant.register_ranges = ((base + low, base + high),)
-        self.heat_pumps_with_refrigerant: set[int] = set()
+            component.register_ranges = tuple(
+                (base + low, base + high) for low, high in ranges
+            )
+        return OptionalBlock(components)
 
     @staticmethod
     def _build[C: LambdaComponent](
@@ -139,15 +189,10 @@ class LambdaHeatPump:
     async def async_update(self) -> None:
         """Refresh every sub-system in one pooled set of block reads.
 
-        The refrigerant-circuit block is read separately, per heat pump, and a
-        heat pump that refuses it is simply left out — that block not being there
-        is a property of the firmware, not a failure to report.
+        The firmware-dependent blocks are read separately, per heat pump, and a
+        heat pump that refuses one is simply left out — that block not being
+        there is a property of the firmware, not a failure to report.
         """
         await self._group.async_update()
-        for index, refrigerant in enumerate(self.heat_pump_refrigerants, 1):
-            try:
-                await refrigerant.async_update()
-            except BlockReadError:
-                self.heat_pumps_with_refrigerant.discard(index)
-            else:
-                self.heat_pumps_with_refrigerant.add(index)
+        for block in self.optional_blocks:
+            await block.async_update()

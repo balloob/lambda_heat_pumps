@@ -17,7 +17,12 @@ from modbus_connection import ModbusError
 
 from .const import CONF_HOST
 from .coordinator import LambdaConfigEntry
-from .lambda_modbus.ranges import REFRIGERANT_RANGE, base_address, readable_ranges
+from .lambda_modbus.ranges import (
+    CAPACITY_LIMIT_RANGES,
+    REFRIGERANT_RANGES,
+    base_address,
+    readable_ranges,
+)
 
 # The host is the one thing here that identifies where the user lives on their
 # network; everything else describes the appliance.
@@ -70,10 +75,10 @@ async def _async_read_registers(coordinator) -> dict[str, Any]:
 
 
 def _blocks(coordinator) -> list[tuple[int, int]]:
-    """Every readable block, including the optional refrigerant one per heat pump."""
+    """Every readable block, plus each heat pump's firmware-dependent ones."""
     blocks = list(readable_ranges(coordinator.counts))
-    low, high = REFRIGERANT_RANGE
     for index in range(1, coordinator.counts["hp"] + 1):
         base = base_address("hp", index)
-        blocks.append((base + low, base + high))
+        for low, high in (*REFRIGERANT_RANGES, *CAPACITY_LIMIT_RANGES):
+            blocks.append((base + low, base + high))
     return blocks

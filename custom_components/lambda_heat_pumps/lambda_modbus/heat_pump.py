@@ -44,23 +44,6 @@ class HeatPump(LambdaComponent):
     compressor_power_consumption_accumulated = int32(20, unit="Wh")
     compressor_thermal_energy_output_accumulated = int32(22, unit="Wh")
 
-    # Capacity limits, settable per outside temperature.
-    config_parameter_50 = integer(50, signed=False)
-    dhw_output_power_15c = gauge(51, 0.1, signed=False, writable=True, unit="kW")
-    heating_min_output_power_15c = gauge(52, 0.1, signed=False, writable=True, unit="kW")
-    heating_max_output_power_15c = gauge(53, 0.1, signed=False, writable=True, unit="kW")
-    heating_min_output_power_0c = gauge(54, 0.1, signed=False, writable=True, unit="kW")
-    heating_max_output_power_0c = gauge(55, 0.1, signed=False, writable=True, unit="kW")
-    heating_min_output_power_minus15c = gauge(
-        56, 0.1, signed=False, writable=True, unit="kW"
-    )
-    heating_max_output_power_minus15c = gauge(
-        57, 0.1, signed=False, writable=True, unit="kW"
-    )
-    cooling_min_output_power = gauge(58, 0.1, signed=False, writable=True, unit="kW")
-    cooling_max_output_power = gauge(59, 0.1, signed=False, writable=True, unit="kW")
-    config_parameter_60 = integer(60, signed=False)
-
 
 class HeatPumpLowFirst(HeatPump):
     """A heat pump whose 32-bit counters put the low word first (CDAB)."""
@@ -89,3 +72,28 @@ class HeatPumpRefrigerant(LambdaComponent):
     eqm_rating = gauge(31, 0.01, signed=False, unit="%")
     expansion_valve_opening_angle = gauge(32, 0.01, signed=False, unit="%")
     config_parameter_33 = integer(33, signed=False)
+
+
+class HeatPumpCapacityLimits(LambdaComponent):
+    """A heat pump's capacity limits (50-60), settable per outside temperature.
+
+    Some firmwares serve them and some refuse the block, so like the refrigerant
+    registers they are read on their own. They are read one register at a time —
+    a wide read of this block returns garbage on the firmwares that do have it.
+    """
+
+    config_parameter_50 = integer(50, signed=False)
+    dhw_output_power_15c = gauge(51, 0.1, signed=False, writable=True, unit="kW")
+    heating_min_output_power_15c = gauge(52, 0.1, signed=False, writable=True, unit="kW")
+    heating_max_output_power_15c = gauge(53, 0.1, signed=False, writable=True, unit="kW")
+    heating_min_output_power_0c = gauge(54, 0.1, signed=False, writable=True, unit="kW")
+    heating_max_output_power_0c = gauge(55, 0.1, signed=False, writable=True, unit="kW")
+    heating_min_output_power_minus15c = gauge(
+        56, 0.1, signed=False, writable=True, unit="kW"
+    )
+    heating_max_output_power_minus15c = gauge(
+        57, 0.1, signed=False, writable=True, unit="kW"
+    )
+    cooling_min_output_power = gauge(58, 0.1, signed=False, writable=True, unit="kW")
+    cooling_max_output_power = gauge(59, 0.1, signed=False, writable=True, unit="kW")
+    config_parameter_60 = integer(60, signed=False)
