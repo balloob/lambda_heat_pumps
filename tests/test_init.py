@@ -162,21 +162,46 @@ async def test_unload_closes_the_connection(
     assert not connection.connected
 
 
-async def test_a_refused_block_says_which_one(
+async def test_a_refused_block_does_not_fail_the_device(
     hass: HomeAssistant, controller: Controller
 ) -> None:
-    """A module that stops answering names itself, rather than just failing."""
-    entry = await setup_entry(hass, controller)
-    coordinator = entry.runtime_data
+    """One refused block makes its own values unavailable, not the whole device.
 
-    # The heat pump is pulled out: it no longer answers for its registers.
+    A controller's register map is firmware-dependent, so any block might be one
+    it refuses; that must never take the rest of the controller down with it.
+    """
+    # The heat pump refuses its core block — from the start, as a firmware does.
     controller.refuse(1004)
-    await coordinator.async_refresh()
+    entry = await setup_entry(hass, controller, legacy=True)
 
-    assert not coordinator.last_update_success
-    message = str(coordinator.last_exception)
-    assert "holding registers 1000-1013" in message
-    assert "reload" in message
+    # The device is up, and the rest of it still reads.
+    assert entry.runtime_data.last_update_success
+    assert state_of(hass, "eu08l_ambient_temperature") == "4.2"
+    assert state_of(hass, "eu08l_boil1_actual_high_temperature") == "48.0"
+    # The heat pump's values are unavailable.
+    assert state_of(hass, "eu08l_hp1_flow_line_temperature") in ("unknown", "unavailable")
+
+
+async def test_a_detected_module_that_refuses_its_block_stays_up(
+    hass: HomeAssistant, controller: Controller
+) -> None:
+    """A boiler whose block is refused only makes its own values unavailable.
+
+    This is the reported case: the boiler answers the probe, so it is detected,
+    but then refuses the block read of its registers.
+    """
+    # A boiler register the probe does not read, so the boiler is still detected.
+    controller.refuse(2003)
+    entry = await setup_entry(hass, controller, legacy=True)
+
+    assert entry.state is ConfigEntryState.LOADED
+    assert entry.runtime_data.counts["boil"] == 1  # detected
+    assert entry.runtime_data.last_update_success  # device up
+    assert state_of(hass, "eu08l_hp1_flow_line_temperature") == "34.12"
+    assert state_of(hass, "eu08l_boil1_actual_high_temperature") in (
+        "unknown",
+        "unavailable",
+    )
 
 
 async def test_only_the_totals_are_enabled_by_default(

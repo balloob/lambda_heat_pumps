@@ -25,9 +25,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from dataclasses import dataclass, field
+import logging
 
 from modbus_connection import BlockReadError
-from modbus_connection.model import Component, ComponentGroup, Range
+from modbus_connection.model import Component, Range
 
 from .boiler import Boiler
 from .buffer import Buffer
@@ -80,6 +81,9 @@ class OptionalBlock:
                 self.available.discard(index)
             else:
                 self.available.add(index)
+
+
+_LOGGER = logging.getLogger(__name__)
 
 __all__ = [
     "Ambient",
@@ -141,7 +145,12 @@ class LambdaHeatPump:
         for component in self.components:
             component.register_ranges = ranges
 
-        self._group = ComponentGroup(unit, self.components)
+        # A controller's register map is firmware-dependent: any block may be one
+        # this controller refuses. A refused block only makes its own values
+        # unavailable — it never fails the whole device — so components are read
+        # one at a time rather than pooled all-or-nothing, and a component that
+        # refuses is not asked again on this connection.
+        self._refused: set[Component] = set()
 
         # Some heat pump blocks are firmware-dependent — a controller either
         # serves them or refuses them outright — so each is read on its own,
@@ -195,12 +204,25 @@ class LambdaHeatPump:
         )
 
     async def async_update(self) -> None:
-        """Refresh every sub-system in one pooled set of block reads.
+        """Refresh every sub-system, tolerating any block the controller refuses.
 
-        The firmware-dependent blocks are read separately, per heat pump, and a
-        heat pump that refuses one is simply left out — that block not being
-        there is a property of the firmware, not a failure to report.
+        A refused block makes only its own values unavailable. A timeout or a
+        dropped link is different — it is not the controller declining a block —
+        so it propagates and the whole device goes unavailable.
         """
-        await self._group.async_update()
+        for component in self.components:
+            if component in self._refused:
+                continue
+            try:
+                await component.async_update()
+            except BlockReadError as err:
+                _LOGGER.info(
+                    "The controller refused %s registers %d-%d; those values "
+                    "will be unavailable until the integration reloads",
+                    err.space,
+                    err.address,
+                    err.address + err.count - 1,
+                )
+                self._refused.add(component)
         for block in self.optional_blocks:
             await block.async_update()
