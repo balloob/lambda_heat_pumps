@@ -190,10 +190,11 @@ HP_SENSORS: tuple[LambdaSensorDescription, ...] = (
     _energy_register("compressor_thermal_energy_output_accumulated"),
 )
 
-# Heat pump registers read from a separate optional component, created only for
-# the heat pumps whose firmware answers for the block. Keyed by the device
-# attribute the coordinator finds the block under.
-HP_REFRIGERANT_SENSORS: tuple[LambdaSensorDescription, ...] = (
+# Heat pump registers that are firmware-dependent — the undocumented refrigerant
+# circuit and the capacity limits. They live on the heat pump component like any
+# other, but a controller that lacks them reads them as None (the tolerant read),
+# so their sensors are created only for the heat pumps that actually serve them.
+HP_OPTIONAL_SENSORS: tuple[LambdaSensorDescription, ...] = (
     _count("config_parameter_24"),
     _percent("vda_rating", precision=2),
     _temperature("hot_gas_temperature"),
@@ -204,9 +205,6 @@ HP_REFRIGERANT_SENSORS: tuple[LambdaSensorDescription, ...] = (
     _percent("eqm_rating", precision=2),
     _percent("expansion_valve_opening_angle", precision=2),
     _count("config_parameter_33"),
-)
-
-HP_CAPACITY_LIMIT_SENSORS: tuple[LambdaSensorDescription, ...] = (
     _count("config_parameter_50"),
     _power("dhw_output_power_15c", unit=UnitOfPower.KILO_WATT, precision=1),
     _power("heating_min_output_power_15c", unit=UnitOfPower.KILO_WATT, precision=1),
@@ -219,13 +217,6 @@ HP_CAPACITY_LIMIT_SENSORS: tuple[LambdaSensorDescription, ...] = (
     _power("cooling_max_output_power", unit=UnitOfPower.KILO_WATT, precision=1),
     _count("config_parameter_60"),
 )
-
-# The optional heat pump blocks: the device attribute holding each, and its
-# sensor descriptions.
-HP_OPTIONAL_BLOCKS: dict[str, tuple[LambdaSensorDescription, ...]] = {
-    "refrigerant": HP_REFRIGERANT_SENSORS,
-    "capacity_limits": HP_CAPACITY_LIMIT_SENSORS,
-}
 
 BOIL_SENSORS: tuple[LambdaSensorDescription, ...] = (
     _count("error_number"),
@@ -453,14 +444,16 @@ async def async_setup_entry(
                 for d in descriptions
             ]
 
-    # The firmware-dependent sensors exist only on the heat pumps whose
-    # controller answered for the block on the first poll.
-    for block, descriptions in HP_OPTIONAL_BLOCKS.items():
-        for index in sorted(coordinator.heat_pumps_with(block)):
-            entities += [
-                LambdaSensor(coordinator, d, module="hp", index=index, block=block)
-                for d in descriptions
-            ]
+    # The firmware-dependent heat pump sensors exist only where the controller
+    # served the register on the first poll — a refused register reads None, so
+    # this omits it rather than showing a permanently-unavailable sensor.
+    for index in range(1, coordinator.counts["hp"] + 1):
+        heat_pump = coordinator.component("hp", index)
+        entities += [
+            LambdaSensor(coordinator, d, module="hp", index=index)
+            for d in HP_OPTIONAL_SENSORS
+            if getattr(heat_pump, d.key) is not None
+        ]
 
     for index in range(1, coordinator.counts["hp"] + 1):
         # A yesterday counter mirrors the daily one it is paired with: the daily
@@ -519,7 +512,6 @@ class LambdaSensor(LambdaEntity, SensorEntity):
         index: int | None = None,
         component: str | None = None,
         attribute: str | None = None,
-        block: str | None = None,
     ) -> None:
         """Bind the sensor to the field it reports."""
         super().__init__(coordinator, description.key, module, index)
@@ -527,16 +519,11 @@ class LambdaSensor(LambdaEntity, SensorEntity):
         self._attr_translation_key = description.key
         self._component = component
         self._attribute = attribute or description.key
-        # A firmware-dependent sensor belongs to its heat pump for name and
-        # device, but reads from that heat pump's separate optional component.
-        self._block = block
 
     @property
     def native_value(self) -> float | str | None:
         """The decoded field, or its label if it is one of the state codes."""
-        if self._block is not None:
-            component = self.coordinator.optional_component(self._block, self._index)
-        elif self._component is not None:
+        if self._component is not None:
             component = getattr(self.coordinator.device, self._component)
         else:
             component = self.coordinator.component(self._module, self._index)

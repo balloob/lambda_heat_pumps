@@ -73,15 +73,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: LambdaConfigEntry) -> bo
     entry.runtime_data = coordinator
 
     # The connection does not reconnect itself. When it drops, reload the entry
-    # so setup runs again against a fresh one.
+    # so setup runs again against a fresh one. An options change also needs a
+    # reload, but the options flow is an OptionsFlowWithReload, which does that
+    # itself — so there is no update listener here.
     entry.async_on_unload(
         connection.on_connection_lost(
             lambda: hass.config_entries.async_schedule_reload(entry.entry_id)
         )
     )
-    # An options change alters the poll interval, the modelled word order and
-    # which entities exist, so it needs a reload.
-    entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
 
     # Every module is a device hanging off the controller, so the controller has
     # to exist before any of them — a platform that only creates modules would
@@ -99,11 +98,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: LambdaConfigEntry) -> bo
 async def async_unload_entry(hass: HomeAssistant, entry: LambdaConfigEntry) -> bool:
     """Unload a config entry; the coordinator closes the connection it owns."""
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-
-
-async def _async_reload_entry(hass: HomeAssistant, entry: LambdaConfigEntry) -> None:
-    """Reload the entry after its options changed."""
-    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_migrate_entry(hass: HomeAssistant, entry: LambdaConfigEntry) -> bool:

@@ -181,18 +181,6 @@ class LambdaCoordinator(DataUpdateCoordinator[LambdaHeatPump]):
         """The modelled sub-system for one module, by 1-based index."""
         return getattr(self.device, MODULES[module])[index - 1]
 
-    def optional_component(self, block: str, index: int):
-        """A heat pump's firmware-dependent sub-system, by block name and index.
-
-        `block` is the attribute on the device holding the optional block —
-        "refrigerant" or "capacity_limits".
-        """
-        return getattr(self.device, block).components[index - 1]
-
-    def heat_pumps_with(self, block: str) -> set[int]:
-        """The heat pumps whose firmware answers for a firmware-dependent block."""
-        return getattr(self.device, block).available
-
     def device_info(self, module: str | None, index: int | None) -> DeviceInfo:
         """The device a module's entities belong to, or the controller's."""
         entry = self.config_entry

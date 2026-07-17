@@ -17,3 +17,10 @@ class LambdaComponent(Component):
     # Every value the controller exposes lives in holding registers (FC03); it
     # has no input registers, coils or discrete inputs.
     register_space = "holding"
+
+    # A Lambda's register map is firmware-dependent: an old controller may serve
+    # single reads but refuse a multi-register block, or lack a block entirely.
+    # Reading tolerantly means a refused block is retried a register at a time —
+    # the registers it serves are kept and the ones it refuses read as None — so
+    # one absent block never takes the served registers around it down with it.
+    tolerant = True

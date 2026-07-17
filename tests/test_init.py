@@ -185,20 +185,25 @@ async def test_a_refused_block_does_not_fail_the_device(
 async def test_a_detected_module_that_refuses_its_block_stays_up(
     hass: HomeAssistant, controller: Controller
 ) -> None:
-    """A boiler whose block is refused only makes its own values unavailable.
+    """A boiler that refuses one register keeps the ones it does serve.
 
     This is the reported case: the boiler answers the probe, so it is detected,
-    but then refuses the block read of its registers.
+    but then refuses a register inside the block. The tolerant read drops back to
+    reading the block a register at a time, so only the refused register goes
+    unavailable — the boiler's other temperatures still come through.
     """
     # A boiler register the probe does not read, so the boiler is still detected.
-    controller.refuse(2003)
+    controller.refuse(2003)  # actual_low_temperature
     entry = await setup_entry(hass, controller, legacy=True)
 
     assert entry.state is ConfigEntryState.LOADED
     assert entry.runtime_data.counts["boil"] == 1  # detected
     assert entry.runtime_data.last_update_success  # device up
     assert state_of(hass, "eu08l_hp1_flow_line_temperature") == "34.12"
-    assert state_of(hass, "eu08l_boil1_actual_high_temperature") in (
+    # The served register is recovered from the per-register fallback.
+    assert state_of(hass, "eu08l_boil1_actual_high_temperature") == "48.0"
+    # Only the one refused register is unavailable.
+    assert state_of(hass, "eu08l_boil1_actual_low_temperature") in (
         "unknown",
         "unavailable",
     )
@@ -281,20 +286,25 @@ async def test_refrigerant_sensors_when_the_firmware_answers(
 async def test_a_refused_refrigerant_block_does_not_break_the_heat_pump(
     hass: HomeAssistant, controller: Controller
 ) -> None:
-    """A firmware that refuses the undocumented block still sets up cleanly.
+    """A firmware that refuses one refrigerant register still sets up cleanly.
 
-    The block is read on its own, so its refusal leaves the heat pump's other
-    values intact and simply omits the refrigerant sensors.
+    The tolerant read falls back to reading the block a register at a time, so a
+    single refused register only omits its own sensor — the served refrigerant
+    registers around it still come through, and the heat pump is untouched.
     """
-    controller.refuse(1024)  # the refrigerant block, before setup
+    controller.refuse(1024)  # config_parameter_24, inside the refrigerant block
     entry = await setup_entry(hass, controller, legacy=True)
 
     assert entry.state is ConfigEntryState.LOADED
     # The heat pump's documented values are unaffected.
     assert state_of(hass, "eu08l_hp1_flow_line_temperature") == "34.12"
-    # And the refrigerant sensors are not created for it.
     registry = er.async_get(hass)
+    # The refused register's sensor is not created.
     assert not registry.async_get_entity_id(
+        "sensor", DOMAIN, "eu08l_hp1_config_parameter_24"
+    )
+    # But the served refrigerant registers still get theirs.
+    assert registry.async_get_entity_id(
         "sensor", DOMAIN, "eu08l_hp1_hot_gas_temperature"
     )
 
