@@ -305,3 +305,24 @@ async def test_a_refused_capacity_block_does_not_break_the_heat_pump(
     assert registry.async_get_entity_id(
         "sensor", DOMAIN, "eu08l_hp1_hot_gas_temperature"
     )
+
+
+async def test_a_refused_block_is_not_read_again(
+    hass: HomeAssistant, controller: Controller
+) -> None:
+    """Once a heat pump refuses a block, it is not asked for it on later polls."""
+    controller.refuse(1024)  # the refrigerant block
+    entry = await setup_entry(hass, controller, legacy=True)
+
+    # The first poll probed it once.
+    assert 1024 in controller.reads
+
+    # A later poll does not — a refusal will not become an answer on the same
+    # connection, so there is nothing to gain by asking.
+    controller.reads.clear()
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+
+    assert 1024 not in controller.reads
+    # The served blocks are of course still read.
+    assert 1000 in controller.reads

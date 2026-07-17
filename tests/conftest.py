@@ -86,6 +86,9 @@ class Controller:
     # What the integration handed the backend, for asserting it passed ints.
     ports: list = field(default_factory=list)
     unit_ids: list = field(default_factory=list)
+    # The start address of every holding-register read, for asserting what was
+    # (and was not) read.
+    reads: list[int] = field(default_factory=list)
     _units: list[MockModbusUnit] = field(default_factory=list)
     # Registers the controller refuses, beyond the absent-module blocks. Applied
     # to every connection, including ones opened after this is set, so a test can
@@ -127,6 +130,13 @@ def controller() -> Iterator[Controller]:
             # over one link is there to be read over the next.
             unit.holding = device.registers
             device._arm_refusals(unit)
+            base_read = unit.read_holding_registers
+
+            async def read(address: int, count: int) -> list[int]:
+                device.reads.append(address)
+                return await base_read(address, count)
+
+            unit.read_holding_registers = read
             if unit not in device._units:
                 device._units.append(unit)
             return unit

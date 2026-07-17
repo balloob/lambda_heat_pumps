@@ -57,18 +57,26 @@ class OptionalBlock:
     """A firmware-dependent heat pump block, one component per heat pump.
 
     `available` is the set of heat pumps (1-based) whose controller answered for
-    the block on the last poll; the rest refuse it and get no entities for it.
+    the block; the rest refuse it and get no entities for it.
     """
 
     components: list[LambdaComponent]
     available: set[int] = field(default_factory=set)
+    # Heat pumps whose controller refused the block. A refusal is the controller
+    # saying it does not serve these registers — it will not start on the same
+    # connection — so they are not asked again. A reconnect reloads the entry,
+    # which rebuilds this and probes afresh.
+    _refused: set[int] = field(default_factory=set)
 
     async def async_update(self) -> None:
-        """Read each heat pump's block, dropping the ones that refuse it."""
+        """Read each heat pump's block, once dropping the ones that refuse it."""
         for index, component in enumerate(self.components, 1):
+            if index in self._refused:
+                continue
             try:
                 await component.async_update()
             except BlockReadError:
+                self._refused.add(index)
                 self.available.discard(index)
             else:
                 self.available.add(index)
