@@ -33,9 +33,12 @@ _HP_RANGES: tuple[Range, ...] = (
     (15, 19),
     (20, 21),  # compressor_power_consumption_accumulated (int32)
     (22, 23),  # compressor_thermal_energy_output_accumulated (int32)
-    (24, 33),
     *((n, n) for n in range(50, 61)),  # capacity limits — one read each
 )
+# The undocumented refrigerant-circuit block, read on its own so a controller
+# that refuses it does not fail the heat pump's whole update. Relative to a heat
+# pump's base address.
+REFRIGERANT_RANGE: tuple[int, int] = (24, 33)
 _BOIL_RANGES: tuple[Range, ...] = ((0, 5), (50, 50))
 _BUFF_RANGES: tuple[Range, ...] = ((0, 9), (50, 50))
 _SOL_RANGES: tuple[Range, ...] = ((0, 4), (5, 6), (50, 51))  # 5-6 is energy_total

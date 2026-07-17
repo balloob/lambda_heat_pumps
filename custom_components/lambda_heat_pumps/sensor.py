@@ -188,16 +188,6 @@ HP_SENSORS: tuple[LambdaSensorDescription, ...] = (
     _state("relais_state_2nd_heating_stage"),
     _energy_register("compressor_power_consumption_accumulated"),
     _energy_register("compressor_thermal_energy_output_accumulated"),
-    _count("config_parameter_24"),
-    _percent("vda_rating", precision=2),
-    _temperature("hot_gas_temperature"),
-    _temperature("subcooling_temperature"),
-    _temperature("suction_gas_temperature"),
-    _temperature("condensation_temperature"),
-    _temperature("evaporation_temperature"),
-    _percent("eqm_rating", precision=2),
-    _percent("expansion_valve_opening_angle", precision=2),
-    _count("config_parameter_33"),
     _count("config_parameter_50"),
     _power("dhw_output_power_15c", unit=UnitOfPower.KILO_WATT, precision=1),
     _power("heating_min_output_power_15c", unit=UnitOfPower.KILO_WATT, precision=1),
@@ -209,6 +199,21 @@ HP_SENSORS: tuple[LambdaSensorDescription, ...] = (
     _power("cooling_min_output_power", unit=UnitOfPower.KILO_WATT, precision=1),
     _power("cooling_max_output_power", unit=UnitOfPower.KILO_WATT, precision=1),
     _count("config_parameter_60"),
+)
+
+# The heat pump's refrigerant-circuit registers, read from a separate component
+# and only present on the heat pumps whose firmware answers for them.
+HP_REFRIGERANT_SENSORS: tuple[LambdaSensorDescription, ...] = (
+    _count("config_parameter_24"),
+    _percent("vda_rating", precision=2),
+    _temperature("hot_gas_temperature"),
+    _temperature("subcooling_temperature"),
+    _temperature("suction_gas_temperature"),
+    _temperature("condensation_temperature"),
+    _temperature("evaporation_temperature"),
+    _percent("eqm_rating", precision=2),
+    _percent("expansion_valve_opening_angle", precision=2),
+    _count("config_parameter_33"),
 )
 
 BOIL_SENSORS: tuple[LambdaSensorDescription, ...] = (
@@ -437,6 +442,14 @@ async def async_setup_entry(
                 for d in descriptions
             ]
 
+    # The refrigerant-circuit sensors exist only on the heat pumps whose firmware
+    # answered for that block on the first poll.
+    for index in sorted(coordinator.heat_pumps_with_refrigerant):
+        entities += [
+            LambdaSensor(coordinator, d, module="hp", index=index, refrigerant=True)
+            for d in HP_REFRIGERANT_SENSORS
+        ]
+
     for index in range(1, coordinator.counts["hp"] + 1):
         # A yesterday counter mirrors the daily one it is paired with: the daily
         # counter hands its value over at midnight, on the way past zero.
@@ -494,6 +507,7 @@ class LambdaSensor(LambdaEntity, SensorEntity):
         index: int | None = None,
         component: str | None = None,
         attribute: str | None = None,
+        refrigerant: bool = False,
     ) -> None:
         """Bind the sensor to the field it reports."""
         super().__init__(coordinator, description.key, module, index)
@@ -501,11 +515,16 @@ class LambdaSensor(LambdaEntity, SensorEntity):
         self._attr_translation_key = description.key
         self._component = component
         self._attribute = attribute or description.key
+        # A refrigerant-circuit sensor belongs to the heat pump for its name and
+        # device, but reads from the heat pump's separate refrigerant component.
+        self._refrigerant = refrigerant
 
     @property
     def native_value(self) -> float | str | None:
         """The decoded field, or its label if it is one of the state codes."""
-        if self._component is not None:
+        if self._refrigerant:
+            component = self.coordinator.refrigerant(self._index)
+        elif self._component is not None:
             component = getattr(self.coordinator.device, self._component)
         else:
             component = self.coordinator.component(self._module, self._index)

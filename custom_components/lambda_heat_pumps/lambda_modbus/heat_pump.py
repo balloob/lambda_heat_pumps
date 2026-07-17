@@ -44,18 +44,6 @@ class HeatPump(LambdaComponent):
     compressor_power_consumption_accumulated = int32(20, unit="Wh")
     compressor_thermal_energy_output_accumulated = int32(22, unit="Wh")
 
-    # Undocumented registers found on real hardware.
-    config_parameter_24 = integer(24, signed=False)
-    vda_rating = gauge(25, 0.01, signed=False, unit="%")
-    hot_gas_temperature = gauge(26, 0.01, unit="°C")
-    subcooling_temperature = gauge(27, 0.01, unit="°C")
-    suction_gas_temperature = gauge(28, 0.01, unit="°C")
-    condensation_temperature = gauge(29, 0.01, unit="°C")
-    evaporation_temperature = gauge(30, 0.01, unit="°C")
-    eqm_rating = gauge(31, 0.01, signed=False, unit="%")
-    expansion_valve_opening_angle = gauge(32, 0.01, signed=False, unit="%")
-    config_parameter_33 = integer(33, signed=False)
-
     # Capacity limits, settable per outside temperature.
     config_parameter_50 = integer(50, signed=False)
     dhw_output_power_15c = gauge(51, 0.1, signed=False, writable=True, unit="kW")
@@ -81,3 +69,23 @@ class HeatPumpLowFirst(HeatPump):
     compressor_thermal_energy_output_accumulated = int32(
         22, word_order="little", unit="Wh"
     )
+
+
+class HeatPumpRefrigerant(LambdaComponent):
+    """A heat pump's refrigerant-circuit registers (24-33).
+
+    These are undocumented, found on real hardware, and some firmwares refuse the
+    whole block. They are modelled on their own so that a heat pump which does
+    not answer for them fails only this read, not its whole update.
+    """
+
+    config_parameter_24 = integer(24, signed=False)
+    vda_rating = gauge(25, 0.01, signed=False, unit="%")
+    hot_gas_temperature = gauge(26, 0.01, unit="°C")
+    subcooling_temperature = gauge(27, 0.01, unit="°C")
+    suction_gas_temperature = gauge(28, 0.01, unit="°C")
+    condensation_temperature = gauge(29, 0.01, unit="°C")
+    evaporation_temperature = gauge(30, 0.01, unit="°C")
+    eqm_rating = gauge(31, 0.01, signed=False, unit="%")
+    expansion_valve_opening_angle = gauge(32, 0.01, signed=False, unit="%")
+    config_parameter_33 = integer(33, signed=False)

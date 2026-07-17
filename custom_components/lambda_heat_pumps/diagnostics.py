@@ -17,7 +17,7 @@ from modbus_connection import ModbusError
 
 from .const import CONF_HOST
 from .coordinator import LambdaConfigEntry
-from .lambda_modbus.ranges import readable_ranges
+from .lambda_modbus.ranges import REFRIGERANT_RANGE, base_address, readable_ranges
 
 # The host is the one thing here that identifies where the user lives on their
 # network; everything else describes the appliance.
@@ -53,17 +53,27 @@ async def async_get_config_entry_diagnostics(
 async def _async_read_registers(coordinator) -> dict[str, Any]:
     """The controller's raw holding registers, address -> value.
 
-    Reads only the blocks the controller answers for — the same ranges the model
-    polls — so the dump never provokes a refusal, and covers exactly the
-    registers a Lambda serves.
+    Reads the blocks the model polls, plus each heat pump's refrigerant-circuit
+    block — which some firmwares refuse. A refused block is skipped rather than
+    failing the dump, so it covers exactly the registers this controller serves.
     """
     registers: dict[int, int] = {}
-    for low, high in readable_ranges(coordinator.counts):
+    for low, high in _blocks(coordinator):
         try:
             values = await coordinator.unit.read_holding_registers(low, high - low + 1)
-        except ModbusError as err:
-            return {"error": str(err), "read_so_far": registers}
+        except ModbusError:
+            continue  # a block this controller does not serve
         registers.update(zip(range(low, high + 1), values, strict=True))
     # JSON object keys are strings; keep them numeric-looking and sorted so the
     # dump reads like an address map.
     return {str(address): registers[address] for address in sorted(registers)}
+
+
+def _blocks(coordinator) -> list[tuple[int, int]]:
+    """Every readable block, including the optional refrigerant one per heat pump."""
+    blocks = list(readable_ranges(coordinator.counts))
+    low, high = REFRIGERANT_RANGE
+    for index in range(1, coordinator.counts["hp"] + 1):
+        base = base_address("hp", index)
+        blocks.append((base + low, base + high))
+    return blocks

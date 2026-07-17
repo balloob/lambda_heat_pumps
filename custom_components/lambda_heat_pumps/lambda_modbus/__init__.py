@@ -24,15 +24,16 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from modbus_connection import BlockReadError
 from modbus_connection.model import Component, ComponentGroup
 
 from .boiler import Boiler
 from .buffer import Buffer
 from .general import Ambient, EManager
-from .heat_pump import HeatPump, HeatPumpLowFirst
+from .heat_pump import HeatPump, HeatPumpLowFirst, HeatPumpRefrigerant
 from .heating_circuit import HeatingCircuit
 from .model import LambdaComponent
-from .ranges import base_address, readable_ranges
+from .ranges import REFRIGERANT_RANGE, base_address, readable_ranges
 from .solar import Solar, SolarLowFirst
 
 if TYPE_CHECKING:
@@ -100,6 +101,18 @@ class LambdaHeatPump:
 
         self._group = ComponentGroup(unit, self.components)
 
+        # The refrigerant-circuit block is undocumented and some firmwares refuse
+        # it, so each heat pump's is read on its own, apart from the group. The
+        # set records which heat pumps (1-based) answered on the last poll.
+        self.heat_pump_refrigerants = self._build(
+            HeatPumpRefrigerant, unit, "hp", num_hps
+        )
+        for index, refrigerant in enumerate(self.heat_pump_refrigerants, 1):
+            base = base_address("hp", index)
+            low, high = REFRIGERANT_RANGE
+            refrigerant.register_ranges = ((base + low, base + high),)
+        self.heat_pumps_with_refrigerant: set[int] = set()
+
     @staticmethod
     def _build[C: LambdaComponent](
         component_class: type[C], unit: ModbusUnit, module: str, count: int
@@ -124,5 +137,17 @@ class LambdaHeatPump:
         )
 
     async def async_update(self) -> None:
-        """Refresh every sub-system in one pooled set of block reads."""
+        """Refresh every sub-system in one pooled set of block reads.
+
+        The refrigerant-circuit block is read separately, per heat pump, and a
+        heat pump that refuses it is simply left out — that block not being there
+        is a property of the firmware, not a failure to report.
+        """
         await self._group.async_update()
+        for index, refrigerant in enumerate(self.heat_pump_refrigerants, 1):
+            try:
+                await refrigerant.async_update()
+            except BlockReadError:
+                self.heat_pumps_with_refrigerant.discard(index)
+            else:
+                self.heat_pumps_with_refrigerant.add(index)

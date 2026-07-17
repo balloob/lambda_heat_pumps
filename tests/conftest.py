@@ -87,23 +87,22 @@ class Controller:
     ports: list = field(default_factory=list)
     unit_ids: list = field(default_factory=list)
     _units: list[MockModbusUnit] = field(default_factory=list)
+    # Registers the controller refuses, beyond the absent-module blocks. Applied
+    # to every connection, including ones opened after this is set, so a test can
+    # arm a refusal before setup.
+    _refused: set[int] = field(default_factory=set)
 
     def refuse(self, address: int) -> None:
-        """Stop answering for any block covering this register, as a pulled
-        module does."""
+        """Stop answering for any block covering this register, as a controller
+        does for a module it does not have."""
+        self._refused.add(address)
         for unit in self._units:
             unit.fail_read(address, ModbusExceptionError(ILLEGAL_DATA_ADDRESS))
 
-
-def _refuse_absent_modules(unit: MockModbusUnit) -> None:
-    """Make the controller answer for the modules it has, and no others.
-
-    A block read that reaches into one of these refuses, exactly as a controller
-    does for a module that is not installed — which is the only way it ever says
-    so.
-    """
-    for base in ABSENT_BLOCKS:
-        unit.fail_read(base, ModbusExceptionError(ILLEGAL_DATA_ADDRESS))
+    def _arm_refusals(self, unit: MockModbusUnit) -> None:
+        """Make a fresh unit refuse the absent modules and anything armed."""
+        for base in (*ABSENT_BLOCKS, *self._refused):
+            unit.fail_read(base, ModbusExceptionError(ILLEGAL_DATA_ADDRESS))
 
 
 @pytest.fixture
@@ -127,7 +126,7 @@ def controller() -> Iterator[Controller]:
             # The controller's memory, not this connection's — what is written
             # over one link is there to be read over the next.
             unit.holding = device.registers
-            _refuse_absent_modules(unit)
+            device._arm_refusals(unit)
             if unit not in device._units:
                 device._units.append(unit)
             return unit

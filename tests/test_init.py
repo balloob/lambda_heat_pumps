@@ -241,3 +241,34 @@ async def test_a_float_unit_id_is_coerced_to_int(
     # Never a float — that is what tmodbus's struct.pack rejects.
     assert controller.ports and all(type(p) is int for p in controller.ports)
     assert controller.unit_ids and all(type(u) is int for u in controller.unit_ids)
+
+
+async def test_refrigerant_sensors_when_the_firmware_answers(
+    hass: HomeAssistant, controller: Controller
+) -> None:
+    """A heat pump whose firmware serves the refrigerant block gets its sensors."""
+    controller.registers[1026] = 4512  # hot gas temperature -> 45.12 °C
+    await setup_entry(hass, controller, legacy=True)
+
+    assert state_of(hass, "eu08l_hp1_hot_gas_temperature") == "45.12"
+
+
+async def test_a_refused_refrigerant_block_does_not_break_the_heat_pump(
+    hass: HomeAssistant, controller: Controller
+) -> None:
+    """A firmware that refuses the undocumented block still sets up cleanly.
+
+    The block is read on its own, so its refusal leaves the heat pump's other
+    values intact and simply omits the refrigerant sensors.
+    """
+    controller.refuse(1024)  # the refrigerant block, before setup
+    entry = await setup_entry(hass, controller, legacy=True)
+
+    assert entry.state is ConfigEntryState.LOADED
+    # The heat pump's documented values are unaffected.
+    assert state_of(hass, "eu08l_hp1_flow_line_temperature") == "34.12"
+    # And the refrigerant sensors are not created for it.
+    registry = er.async_get(hass)
+    assert not registry.async_get_entity_id(
+        "sensor", DOMAIN, "eu08l_hp1_hot_gas_temperature"
+    )
